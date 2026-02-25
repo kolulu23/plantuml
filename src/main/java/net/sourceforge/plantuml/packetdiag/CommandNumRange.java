@@ -5,12 +5,12 @@
  * (C) Copyright 2009-2026, Arnaud Roques
  *
  * Project Info:  https://plantuml.com
- * 
+ *
  * If you like this project or if you find it useful, you can support us at:
- * 
+ *
  * https://plantuml.com/patreon (only 1$ per month!)
  * https://plantuml.com/paypal
- * 
+ *
  * This file is part of PlantUML.
  *
  * PlantUML is free software; you can redistribute it and/or modify it
@@ -31,9 +31,12 @@
  *
  * Original Author:  kolulu23
  *
- * 
+ *
  */
 package net.sourceforge.plantuml.packetdiag;
+
+import java.util.Map;
+import java.util.Optional;
 
 import net.sourceforge.plantuml.command.CommandExecutionResult;
 import net.sourceforge.plantuml.command.ParserPass;
@@ -46,9 +49,6 @@ import net.sourceforge.plantuml.regex.RegexLeaf;
 import net.sourceforge.plantuml.regex.RegexOr;
 import net.sourceforge.plantuml.regex.RegexResult;
 import net.sourceforge.plantuml.utils.LineLocation;
-
-import java.util.Map;
-import java.util.Optional;
 
 public class CommandNumRange extends SingleLineCommand2<PacketDiagram> {
 
@@ -118,6 +118,9 @@ public class CommandNumRange extends SingleLineCommand2<PacketDiagram> {
 			// auto length and start position, requires diagram context
 			start = system.getLastPacketEnd().map(v -> v + 1).orElse(0);
 			end = start + getLengthAttribute(attr) - 1;
+		}
+		if (start > end) {
+			return CommandExecutionResult.error("Bit range start " + r2 + " is behind " + r3);
 		}
 		// local height attribute for current packet block
 		int height = getHeightAttribute(attr);
