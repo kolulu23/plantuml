@@ -40,6 +40,7 @@ import net.sourceforge.plantuml.klimt.LineBreakStrategy;
 import net.sourceforge.plantuml.klimt.Shadowable;
 import net.sourceforge.plantuml.klimt.UStroke;
 import net.sourceforge.plantuml.klimt.UTranslate;
+import net.sourceforge.plantuml.klimt.color.HColors;
 import net.sourceforge.plantuml.klimt.creole.CreoleMode;
 import net.sourceforge.plantuml.klimt.creole.Display;
 import net.sourceforge.plantuml.klimt.drawing.UGraphic;
@@ -51,6 +52,7 @@ import net.sourceforge.plantuml.klimt.geom.XDimension2D;
 import net.sourceforge.plantuml.klimt.shape.AbstractTextBlock;
 import net.sourceforge.plantuml.klimt.shape.TextBlock;
 import net.sourceforge.plantuml.klimt.shape.TextBlockUtils;
+import net.sourceforge.plantuml.klimt.shape.ULine;
 import net.sourceforge.plantuml.klimt.shape.URectangle;
 import net.sourceforge.plantuml.style.ISkinParam;
 import net.sourceforge.plantuml.style.SName;
@@ -194,12 +196,30 @@ public class PacketBlock {
 			public void drawU(UGraphic ug) {
 				final XDimension2D dim = calculateDimension(ug.getStringBounder());
 				ug = UGraphicStencil.create(ug, dim);
-				ug = fashion.apply(ug);
-				// URectangle#drawRect
+				// Draw filled rectangle with no border
+				final Fashion fillFashion = fashion.withForeColor(HColors.none());
+				UGraphic ugFill = fillFashion.apply(ug);
 				final URectangle rect = URectangle.build(dim.getWidth(), dim.getHeight());
 				final Shadowable shape = rect.rounded(fashion.getRoundCorner());
 				shape.setDeltaShadow(fashion.getDeltaShadow());
-				ug.draw(shape);
+				ugFill.draw(shape);
+
+				// Draw borders with appropriate strokes
+				final double width = dim.getWidth();
+				final double height = dim.getHeight();
+				final UStroke solidStroke = fashion.getStroke();
+				final UStroke dashedStroke = openerStroke;
+				// Apply foreground color for lines
+				final UGraphic ugLines = fashion.applyColors(ug);
+
+				// Top side (always solid)
+				ugLines.apply(solidStroke).draw(ULine.hline(width));
+				// Bottom side (always solid)
+				ugLines.apply(solidStroke).apply(UTranslate.dy(height)).draw(ULine.hline(width));
+				// Left side (dashed if leftOpen)
+				ugLines.apply(leftOpen ? dashedStroke : solidStroke).draw(ULine.vline(height));
+				// Right side (dashed if rightOpen)
+				ugLines.apply(rightOpen ? dashedStroke : solidStroke).apply(UTranslate.dx(width)).draw(ULine.vline(height));
 
 				final TextBlock tb = TextBlockUtils.mergeTB(stereo, label, HorizontalAlignment.CENTER);
 				tb.drawU(ug.apply(new UTranslate(0D, vMargin)));
