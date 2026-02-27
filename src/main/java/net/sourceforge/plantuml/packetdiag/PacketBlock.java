@@ -5,12 +5,12 @@
  * (C) Copyright 2009-2026, Arnaud Roques
  *
  * Project Info:  https://plantuml.com
- * 
+ *
  * If you like this project or if you find it useful, you can support us at:
- * 
+ *
  * https://plantuml.com/patreon (only 1$ per month!)
  * https://plantuml.com/paypal
- * 
+ *
  * This file is part of PlantUML.
  *
  * PlantUML is free software; you can redistribute it and/or modify it
@@ -31,13 +31,14 @@
  *
  * Original Author:  kolulu23
  *
- * 
+ *
  */
 package net.sourceforge.plantuml.packetdiag;
 
 import net.sourceforge.plantuml.klimt.Fashion;
 import net.sourceforge.plantuml.klimt.LineBreakStrategy;
 import net.sourceforge.plantuml.klimt.Shadowable;
+import net.sourceforge.plantuml.klimt.UClip;
 import net.sourceforge.plantuml.klimt.UStroke;
 import net.sourceforge.plantuml.klimt.UTranslate;
 import net.sourceforge.plantuml.klimt.color.HColors;
@@ -46,7 +47,6 @@ import net.sourceforge.plantuml.klimt.creole.Display;
 import net.sourceforge.plantuml.klimt.drawing.UGraphic;
 import net.sourceforge.plantuml.klimt.drawing.UGraphicStencil;
 import net.sourceforge.plantuml.klimt.font.StringBounder;
-import net.sourceforge.plantuml.klimt.font.UFont;
 import net.sourceforge.plantuml.klimt.geom.HorizontalAlignment;
 import net.sourceforge.plantuml.klimt.geom.XDimension2D;
 import net.sourceforge.plantuml.klimt.shape.AbstractTextBlock;
@@ -141,55 +141,61 @@ public class PacketBlock {
 		return getStyle().getSymbolContext(skinParam.getIHtmlColorSet());
 	}
 
-	private TextBlock getLabelTextBlock(String label) {
+	private TextBlock getLabelTextBlock(String label, LineBreakStrategy lineBreakStrategy) {
 		return Display.getWithNewlines(skinParam.getPragma(), label).create8(
 						getStyle().getFontConfiguration(skinParam.getIHtmlColorSet()),
 						HorizontalAlignment.CENTER,
 						skinParam,
 						CreoleMode.SIMPLE_LINE,
-						LineBreakStrategy.NONE
+						lineBreakStrategy
 		);
 	}
 
-	private TextBlock getLabelTextBlockAbbr(StringBounder stringBounder, double bitWidth) {
-		UFont font = getStyle().getUFont();
-		final String pad = "...";
-		XDimension2D padDim = stringBounder.calculateDimension(font, pad);
-		XDimension2D labelDim = stringBounder.calculateDimension(font, label);
-		double reqWidth = getDrawWidth(bitWidth);
-		if (labelDim.getWidth() < reqWidth) {
-			return getLabelTextBlock(label);
-		}
-		// Shrink label char by char, this is technically wrong when there's multiple Unicode code points
-		String abbr = label;
-		for (int i = label.length(); i > 0; i--) {
-			if (labelDim.getWidth() + padDim.getWidth() < reqWidth) {
-				break;
+	private TextBlock clipLabel(final TextBlock labelBlock, final double maxWidth, final double maxHeight) {
+		return new AbstractTextBlock() {
+			@Override
+			public XDimension2D calculateDimension(StringBounder stringBounder) {
+				XDimension2D orig = labelBlock.calculateDimension(stringBounder);
+				double width = Math.min(orig.getWidth(), maxWidth);
+				double height = Math.min(orig.getHeight(), maxHeight);
+				return new XDimension2D(width, height);
 			}
-			abbr = label.substring(0, i) + pad;
-			labelDim = stringBounder.calculateDimension(font, abbr);
-		}
-		return getLabelTextBlock(abbr);
+
+			@Override
+			public void drawU(UGraphic ug) {
+				XDimension2D origin = labelBlock.calculateDimension(ug.getStringBounder());
+				double clipWidth = Math.min(origin.getWidth(), maxWidth);
+				double clipHeight = Math.min(origin.getHeight(), maxHeight);
+				ug = ug.apply(new UClip(0, 0, clipWidth, clipHeight));
+				labelBlock.drawU(ug);
+			}
+		};
+	}
+
+	private TextBlock getLabelTextBlockClipped(StringBounder stringBounder, double reqWidth, double clipWidth, double clipHeight) {
+		final LineBreakStrategy wrapStrategy = new LineBreakStrategy(Integer.toString((int) reqWidth));
+		TextBlock labelTB = getLabelTextBlock(label, wrapStrategy);
+		return clipLabel(labelTB, clipWidth, clipHeight);
 	}
 
 	TextBlock getShapeTextBlock(StringBounder stringBounder, double bitWidth, double bitHeight) {
-		// vertical(top and bottom) margin for displaying the label content
-		final double vMargin = 10D;
 		final double reqWidth = getDrawWidth(bitWidth);
+		final double reqHeight = getDrawHeight(bitHeight);
 		final Fashion fashion = getFashion();
-		final TextBlock label = getLabelTextBlockAbbr(stringBounder, bitWidth);
+		final TextBlock labelTB = getLabelTextBlockClipped(stringBounder, reqWidth, reqWidth, reqHeight);
+		final XDimension2D labelDim = labelTB.calculateDimension(stringBounder);
+		final double labelMarginTop = (reqHeight - labelDim.getHeight()) / 2;
 		// mergeTB would add label height and margins to the shape so here this offset makes sure we actually get drawHeight
-		double heightPreOffset = Math.max(0D, getDrawHeight(bitHeight) - label.calculateDimension(stringBounder).getHeight() - vMargin - vMargin);
-		final TextBlock stereo = TextBlockUtils.empty(reqWidth, heightPreOffset);
+		final TextBlock stereo = TextBlockUtils.empty(reqWidth, reqHeight - labelDim.getHeight());
 
 		// Basically it's URectangle#asSmall, but without horizontal margin
 		return new AbstractTextBlock() {
 			@Override
 			public XDimension2D calculateDimension(StringBounder stringBounder) {
-				final XDimension2D dimLabel = label.calculateDimension(stringBounder);
+				final XDimension2D dimLabel = labelTB.calculateDimension(stringBounder);
 				final XDimension2D dimStereo = stereo.calculateDimension(stringBounder);
 				XDimension2D dim = dimStereo.mergeTB(dimLabel);
-				return new XDimension2D(dim.getWidth(), dim.getHeight() + vMargin + vMargin);
+				return new XDimension2D(dim.getWidth(), dim.getHeight());
 			}
 
 			@Override
@@ -221,8 +227,8 @@ public class PacketBlock {
 				// Right side (dashed if rightOpen)
 				ugLines.apply(rightOpen ? dashedStroke : solidStroke).apply(UTranslate.dx(width)).draw(ULine.vline(height));
 
-				final TextBlock tb = TextBlockUtils.mergeTB(stereo, label, HorizontalAlignment.CENTER);
-				tb.drawU(ug.apply(new UTranslate(0D, vMargin)));
+				final TextBlock tb = TextBlockUtils.mergeTB(labelTB, stereo, HorizontalAlignment.CENTER);
+				tb.drawU(ug.apply(new UTranslate(0D, labelMarginTop)));
 			}
 		};
 	}
